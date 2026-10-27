@@ -1,7 +1,16 @@
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
 fn run_source(extra: &[&str]) -> std::process::Output {
-    let dir = std::env::temp_dir().join(format!("xezim_banner_{}", std::process::id()));
+    // Each call gets its own directory: the tests run in parallel, and one
+    // removing a shared directory would delete the other's source.
+    let dir = std::env::temp_dir().join(format!(
+        "xezim_banner_{}_{}",
+        std::process::id(),
+        NEXT_DIR.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&dir).expect("create temporary directory");
     let source = dir.join("banner.sv");
     std::fs::write(

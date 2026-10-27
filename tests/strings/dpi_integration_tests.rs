@@ -22,9 +22,13 @@ fn compile_dpi_lib(c_file: &str, stem: &str) -> PathBuf {
     // subdirectory so users don't accidentally pick up unrelated
     // xezim source files via the include search path.
     let include_dir = manifest_path("include");
-    let status = Command::new("cc")
-        .arg("-shared")
-        .arg("-fPIC")
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // Undefined symbols resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let status = cc
         .arg("-I")
         .arg(&include_dir)
         .arg(&c_path)

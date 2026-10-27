@@ -151,8 +151,14 @@ void (*vlog_startup_routines[])(void)={boot,0};
 "#,
     )
     .unwrap();
-    let output = Command::new("cc")
-        .args(["-shared", "-fPIC", "-Wall", "-Wextra", "-I"])
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // The VPI routines resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let output = cc
+        .args(["-Wall", "-Wextra", "-I"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("include"))
         .args(["output.c", "-o", "output.so"])
         .current_dir(&path)

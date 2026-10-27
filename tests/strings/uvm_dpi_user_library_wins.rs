@@ -63,8 +63,13 @@ fn user_dpi_library_overrides_builtin_uvm_helpers() {
     std::fs::write(d.join("user.c"), USER_C).unwrap();
     std::fs::write(d.join("top.sv"), SV).unwrap();
     let so = d.join("user.so");
-    let build = Command::new("cc")
-        .args(["-shared", "-fPIC"])
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // Undefined symbols resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let build = cc
         .arg(d.join("user.c"))
         .arg("-o")
         .arg(&so)

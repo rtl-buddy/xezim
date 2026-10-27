@@ -32,8 +32,13 @@ fn shared_lib(dir: &Path, stem: &str, src: &str) -> PathBuf {
     let c = dir.join(format!("{stem}.c"));
     let so = dir.join(format!("{stem}.so"));
     std::fs::write(&c, src).unwrap();
-    let ok = Command::new("cc")
-        .args(["-shared", "-fPIC"])
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // Undefined symbols resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let ok = cc
         .arg(&c)
         .arg("-o")
         .arg(&so)

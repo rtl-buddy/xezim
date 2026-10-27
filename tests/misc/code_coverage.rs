@@ -570,8 +570,14 @@ fn vpi_toggles(d: &Path, c: &str, src: &str, case: &str) -> (String, String) {
     if !so.exists() {
         std::fs::write(d.join("t0.c"), c).unwrap();
         let include = Path::new(env!("CARGO_MANIFEST_DIR")).join("include");
-        let ok = Command::new("cc")
-            .args(["-shared", "-fPIC", "-I"])
+        let mut cc = Command::new("cc");
+        cc.args(["-shared", "-fPIC"]);
+        if cfg!(target_os = "macos") {
+            // The VPI routines resolve when xezim loads the library.
+            cc.arg("-Wl,-undefined,dynamic_lookup");
+        }
+        let ok = cc
+            .arg("-I")
             .arg(&include)
             .arg(d.join("t0.c"))
             .arg("-o")

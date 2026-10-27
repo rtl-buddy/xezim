@@ -258,8 +258,14 @@ pub fn check_lib(
         let (c, so) = (dir.join("lib.c"), dir.join("lib.so"));
         std::fs::write(&c, c_src).unwrap();
         let include = Path::new(env!("CARGO_MANIFEST_DIR")).join("include");
-        let ok = Command::new("cc")
-            .args(["-shared", "-fPIC", "-I"])
+        let mut cc = Command::new("cc");
+        cc.args(["-shared", "-fPIC"]);
+        if cfg!(target_os = "macos") {
+            // Undefined symbols resolve when xezim loads the library.
+            cc.arg("-Wl,-undefined,dynamic_lookup");
+        }
+        let ok = cc
+            .arg("-I")
             .arg(&include)
             .arg(&c)
             .arg("-o")

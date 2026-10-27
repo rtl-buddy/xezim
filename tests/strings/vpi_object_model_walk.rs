@@ -38,8 +38,14 @@ fn walk_sources(tag: &str, src: &str, sources: &[(&str, &str)], top: Option<&str
     }
     let include = Path::new(env!("CARGO_MANIFEST_DIR")).join("include");
     let so = d.join("walk.so");
-    let ok = Command::new("cc")
-        .args(["-shared", "-fPIC", "-I"])
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // The VPI routines resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let ok = cc
+        .arg("-I")
         .arg(&include)
         .arg("-I")
         .arg(&d)

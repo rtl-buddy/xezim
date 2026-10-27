@@ -115,8 +115,14 @@ fn setup() -> (PathBuf, PathBuf) {
     std::fs::write(&c, DRIVER_C).unwrap();
     std::fs::write(dir.join("top.sv"), TOP_SV).unwrap();
     let include = Path::new(env!("CARGO_MANIFEST_DIR")).join("include");
-    let ok = Command::new("cc")
-        .args(["-shared", "-fPIC", "-Wall", "-I"])
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // The VPI routines resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let ok = cc
+        .args(["-Wall", "-I"])
         .arg(&include)
         .arg(&c)
         .arg("-o")

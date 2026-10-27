@@ -339,13 +339,13 @@ fn sigint_during_a_blocked_dpi_call_flushes_the_fst() {
          void c_block(void) { fprintf(stderr, \"BLOCKING\\n\"); fflush(stderr); sleep(30); }\n",
     );
     let so = s.path("dpi", "so");
-    let ok = Command::new("cc")
-        .args(["-shared", "-fPIC"])
-        .arg(&c)
-        .arg("-o")
-        .arg(&so)
-        .status()
-        .expect("launch cc");
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // Undefined symbols resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let ok = cc.arg(&c).arg("-o").arg(&so).status().expect("launch cc");
     assert!(ok.success(), "cc failed");
     let sv = s.write(
         "dpi",

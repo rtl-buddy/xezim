@@ -106,9 +106,14 @@ fn build_and_run(tag: &str, compiler: &str, lang_args: &[&str]) {
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let so = d.join("uvm.so");
-    let build = Command::new(compiler)
-        .args(lang_args)
-        .args(["-shared", "-fPIC", "-I"])
+    let mut cc = Command::new(compiler);
+    cc.args(lang_args).args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // The exported subroutines resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let build = cc
+        .arg("-I")
         .arg(root.join("include"))
         .arg("-I")
         .arg(&d)

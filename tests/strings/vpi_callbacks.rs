@@ -20,8 +20,14 @@ fn shared_lib(dir: &Path, src: &str) -> PathBuf {
     let so = dir.join("cb.so");
     std::fs::write(&c, src).unwrap();
     let include = Path::new(env!("CARGO_MANIFEST_DIR")).join("include");
-    let ok = Command::new("cc")
-        .args(["-shared", "-fPIC", "-Wall", "-I"])
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // The VPI routines resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let ok = cc
+        .args(["-Wall", "-I"])
         .arg(&include)
         .arg(&c)
         .arg("-o")

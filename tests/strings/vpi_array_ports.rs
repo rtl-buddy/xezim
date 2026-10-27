@@ -30,8 +30,14 @@ fn setup(stem: &str) -> (PathBuf, PathBuf) {
     std::fs::create_dir_all(&dir).unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let so = dir.join(format!("{stem}.so"));
-    let ok = Command::new("cc")
-        .args(["-shared", "-fPIC", "-Wall", "-Werror", "-I"])
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // The VPI routines resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let ok = cc
+        .args(["-Wall", "-Werror", "-I"])
         .arg(root.join("include"))
         .arg(root.join(format!("tests/dpi/{stem}.c")))
         .arg("-o")

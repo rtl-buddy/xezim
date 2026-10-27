@@ -22,9 +22,13 @@ fn unique_so_path(stem: &str) -> PathBuf {
 #[test]
 fn dpi_import_in_child_modules_dispatches() {
     let so_path = unique_so_path("child_module_import");
-    let status = Command::new("cc")
-        .arg("-shared")
-        .arg("-fPIC")
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // Undefined symbols resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let status = cc
         .arg(manifest_path("tests/dpi/child_module_import.c"))
         .arg("-o")
         .arg(&so_path)

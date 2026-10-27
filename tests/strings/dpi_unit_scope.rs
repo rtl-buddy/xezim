@@ -20,8 +20,14 @@ fn compile_dpi_lib(c_file: &str, stem: &str) -> PathBuf {
         .as_nanos();
     let so_path =
         std::env::temp_dir().join(format!("{}_{}_{}.so", stem, std::process::id(), nanos));
-    let status = Command::new("cc")
-        .args(["-shared", "-fPIC", "-I"])
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // The exported subroutines resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let status = cc
+        .arg("-I")
         .arg(manifest_path("include"))
         .arg(manifest_path(c_file))
         .arg("-o")

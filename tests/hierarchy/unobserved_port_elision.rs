@@ -394,8 +394,14 @@ void (*vlog_startup_routines[])(void) = { startup, 0 };
     let so = dir.join("peek.so");
     std::fs::write(&c, C).unwrap();
     let include = Path::new(env!("CARGO_MANIFEST_DIR")).join("include");
-    let ok = Command::new("cc")
-        .args(["-shared", "-fPIC", "-I"])
+    let mut cc = Command::new("cc");
+    cc.args(["-shared", "-fPIC"]);
+    if cfg!(target_os = "macos") {
+        // The VPI routines resolve when xezim loads the library.
+        cc.arg("-Wl,-undefined,dynamic_lookup");
+    }
+    let ok = cc
+        .arg("-I")
         .arg(&include)
         .arg(&c)
         .arg("-o")

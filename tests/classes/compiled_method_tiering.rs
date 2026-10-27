@@ -111,8 +111,10 @@ fn tiering_boundary_is_invisible() {
 // locks see the true default.
 // ---------------------------------------------------------------------------
 
+use std::io::Read;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 fn xezim_bin2() -> PathBuf {
     let mut p = std::env::current_exe().expect("current_exe");
@@ -122,6 +124,42 @@ fn xezim_bin2() -> PathBuf {
         p.pop();
     }
     p.join("xezim")
+}
+
+/// Runs `cmd` to completion like `Command::output`, but kills it once
+/// `limit` has passed, so a hung simulation fails the test instead of
+/// stalling the suite. Both pipes are drained while it runs.
+fn output_within(cmd: &mut Command, limit: Duration) -> std::io::Result<Output> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let drain = |mut pipe: Box<dyn Read + Send>| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = pipe.read_to_end(&mut bytes);
+            bytes
+        })
+    };
+    let stdout = drain(Box::new(child.stdout.take().unwrap()));
+    let stderr = drain(Box::new(child.stderr.take().unwrap()));
+    let deadline = Instant::now() + limit;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            break child.wait()?;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    Ok(Output {
+        status,
+        stdout: stdout.join().unwrap(),
+        stderr: stderr.join().unwrap(),
+    })
 }
 
 fn write_tier_src(name: &str, body: &str) -> PathBuf {
@@ -377,17 +415,14 @@ fn run_with_admission(source: &str, tier: &str) -> (String, usize, usize) {
     let src = dir.join("input.sv");
     let cache = dir.join("cache");
     std::fs::write(&src, source).unwrap();
-    let output = Command::new("timeout")
-        .args(["--kill-after=5s", "60s"])
-        .arg(xezim_bin2())
-        .args(["--simulate", "-s", "top"])
+    let mut cmd = Command::new(xezim_bin2());
+    cmd.args(["--simulate", "-s", "top"])
         .arg(&src)
         .env("XEZIM_COMPILE_METHODS", "1")
         .env("XEZIM_METHOD_TIER", tier)
         .env("XEZIM_METHOD_CACHE", &cache)
-        .env_remove("XEZIM_METHOD_PROFILE")
-        .output()
-        .expect("heat subprocess");
+        .env_remove("XEZIM_METHOD_PROFILE");
+    let output = output_within(&mut cmd, Duration::from_secs(60)).expect("heat subprocess");
     assert!(
         output.status.success(),
         "{}\n{}",

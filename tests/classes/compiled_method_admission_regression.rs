@@ -3,11 +3,49 @@
 //! Persistent method entries must also change when any external compile-time
 //! dependency changes, including package enum values and typedef targets.
 
+use std::io::Read;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 static NEXT_CASE: AtomicUsize = AtomicUsize::new(0);
+
+/// Runs `cmd` to completion like `Command::output`, but kills it once
+/// `limit` has passed, so a hung simulation fails the test instead of
+/// stalling the suite. Both pipes are drained while it runs.
+fn output_within(cmd: &mut Command, limit: Duration) -> std::io::Result<Output> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let drain = |mut pipe: Box<dyn Read + Send>| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = pipe.read_to_end(&mut bytes);
+            bytes
+        })
+    };
+    let stdout = drain(Box::new(child.stdout.take().unwrap()));
+    let stderr = drain(Box::new(child.stderr.take().unwrap()));
+    let deadline = Instant::now() + limit;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            break child.wait()?;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    Ok(Output {
+        status,
+        stdout: stdout.join().unwrap(),
+        stderr: stderr.join().unwrap(),
+    })
+}
 
 struct CaseDir(PathBuf);
 
@@ -31,10 +69,8 @@ impl CaseDir {
             binary.pop();
         }
         binary.push("xezim");
-        let output = Command::new("timeout")
-            .args(["--kill-after=5s", "60s"])
-            .arg(binary)
-            .args(["--simulate", "-s", "top"])
+        let mut cmd = Command::new(binary);
+        cmd.args(["--simulate", "-s", "top"])
             .arg(&input)
             .env("XEZIM_COMPILE_METHODS", if compiled { "1" } else { "0" })
             .env("XEZIM_METHOD_TIER", "0")
@@ -46,9 +82,9 @@ impl CaseDir {
                 } else {
                     PathBuf::from("0")
                 },
-            )
-            .output()
-            .expect("run isolated simulator");
+            );
+        let output =
+            output_within(&mut cmd, Duration::from_secs(60)).expect("run isolated simulator");
         assert!(
             output.status.success(),
             "simulation failed: {:?}\n{}\n{}",

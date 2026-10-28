@@ -182,7 +182,12 @@ fn uvm_1_2_dpi_regex_config_factory_cmdline() {
     );
     let out = lines(&sim);
     // Reference-verified, except argv0 and the tool name, which name the
-    // simulator itself.
+    // simulator itself, and the last `T|re` field: uvm_re_match hands an
+    // empty pattern to the host's regcomp as the C sources do, and glibc
+    // accepts it (0) where the BSD libc rejects it (REG_EMPTY), with a
+    // REGEX_INV error reported through UVM.
+    let empty_re = host_regcomp_code("");
+    let re_line = format!("T|re 0 0 1 {empty_re}");
     assert_lines(
         &out,
         &[
@@ -196,18 +201,42 @@ fn uvm_1_2_dpi_regex_config_factory_cmdline() {
             "T|value n=1 v=1",
             "T|values n=1 v0=uvm_test_top.l*,knob2,11",
             "T|plusargs 6",
-            "T|re 0 0 1 0",
+            &re_line,
             "T|glob '/^a.\\[0\\]\\..*$/' '/x+/' ''",
             "T|argv0 xezim tool xezim",
         ],
     );
-    assert!(
-        !out.iter().any(|l| l.contains("[DPI]")
-            || l.starts_with("UVM_ERROR @")
-            || l.starts_with("UVM_WARNING @")),
-        "no DPI diagnostics or UVM errors expected:\n{}",
+    let empty_re_errors = usize::from(empty_re != 0);
+    assert_eq!(
+        count_id(&out, "UVM_ERROR", "UVM/DPI/REGEX_INV"),
+        empty_re_errors,
+        "full output:\n{}",
         out.join("\n")
     );
+    assert_eq!(
+        out.iter()
+            .filter(|l| l.contains("[DPI]")
+                || l.starts_with("UVM_ERROR @")
+                || l.starts_with("UVM_WARNING @"))
+            .count(),
+        empty_re_errors,
+        "no DPI diagnostics or UVM errors expected beyond the empty pattern's:\n{}",
+        out.join("\n")
+    );
+}
+
+/// What the host's regcomp returns for `pat` under REG_EXTENDED: the
+/// value uvm_re_match reports for a pattern it cannot compile.
+fn host_regcomp_code(pat: &str) -> i32 {
+    let c_pat = std::ffi::CString::new(pat).expect("pattern without NUL");
+    // SAFETY: `re` is a zeroed regex_t that regcomp initializes; regfree
+    // releases it whether or not the compile succeeded.
+    unsafe {
+        let mut re: libc::regex_t = std::mem::zeroed();
+        let err = libc::regcomp(&mut re, c_pat.as_ptr(), libc::REG_EXTENDED);
+        libc::regfree(&mut re);
+        err
+    }
 }
 
 /// The C code's diagnostics: uvm_dump_re_cache's notice, an invalid regex
